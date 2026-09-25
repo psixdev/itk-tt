@@ -1,13 +1,13 @@
 package router
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"itk-tt/services/wallets"
 	"log"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -18,35 +18,31 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
-func writeError(w http.ResponseWriter, message string, code int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-
-	json.NewEncoder(w).Encode(ErrorResponse{Message: message})
+func writeError(c *gin.Context, message string, code int) {
+	c.JSON(code, ErrorResponse{Message: message})
 }
 
 // TODO: add json validator
-func registerWalletsRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
-	mux.HandleFunc("GET /api/v1/wallets", func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+func registerWalletsRoutes(rr *gin.Engine, db *pgxpool.Pool) {
+	rr.GET("/api/v1/wallets", func(c *gin.Context) {
+		ctx := c.Request.Context()
 
 		list, err := wallets.GetWallets(ctx, db)
 		if err != nil {
 			log.Println(err)
-			writeError(w, internalErrorMessage, http.StatusInternalServerError)
+			writeError(c, internalErrorMessage, http.StatusInternalServerError)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(list)
+		c.JSON(http.StatusOK, list)
 	})
 
-	mux.HandleFunc("GET /api/v1/wallets/{id}", func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+	rr.GET("/api/v1/wallets/:id", func(c *gin.Context) {
+		ctx := c.Request.Context()
 
-		id, err := uuid.Parse(r.PathValue("id"))
+		id, err := uuid.Parse(c.Param("id"))
 		if err != nil {
-			writeError(w, "invalid uuid", http.StatusBadRequest)
+			writeError(c, "invalid uuid", http.StatusBadRequest)
 			return
 		}
 
@@ -54,49 +50,46 @@ func registerWalletsRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
 		if err != nil {
 			switch {
 			case errors.Is(err, wallets.ErrWalletNotFound):
-				writeError(w, err.Error(), http.StatusNotFound)
+				writeError(c, err.Error(), http.StatusNotFound)
 			default:
 				log.Println(err)
-				writeError(w, internalErrorMessage, http.StatusInternalServerError)
+				writeError(c, internalErrorMessage, http.StatusInternalServerError)
 			}
 
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(wallet)
+		c.JSON(http.StatusOK, wallet)
 	})
 
-	mux.HandleFunc("POST /api/v1/wallets", func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+	rr.POST("/api/v1/wallets", func(c *gin.Context) {
+		ctx := c.Request.Context()
 
 		wallet, err := wallets.CreateWallet(ctx, db)
 		if err != nil {
 			log.Println(err)
-			writeError(w, internalErrorMessage, http.StatusInternalServerError)
+			writeError(c, internalErrorMessage, http.StatusInternalServerError)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(wallet)
+		c.JSON(http.StatusCreated, wallet)
 	})
 
-	mux.HandleFunc("POST /api/v1/wallets/{id}/transaction", func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+	rr.POST("/api/v1/wallets/:id/transaction", func(c *gin.Context) {
+		ctx := c.Request.Context()
 
 		// parse id and params
-		id, err := uuid.Parse(r.PathValue("id"))
+		id, err := uuid.Parse(c.Param("id"))
 		if err != nil {
 			log.Println(err)
-			writeError(w, "invalid uuid", http.StatusBadRequest)
+			writeError(c, "invalid uuid", http.StatusBadRequest)
 			return
 		}
 
 		var params wallets.TransactionParams
 
-		if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
-			writeError(w, "invalid json", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&params); err != nil {
+			writeError(c, "invalid json", http.StatusBadRequest)
 			return
 		}
 
@@ -109,12 +102,12 @@ func registerWalletsRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
 				wallets.OperationTypeDeposit,
 				wallets.OperationTypeWithdraw,
 			)
-			writeError(w, errorString, http.StatusBadRequest)
+			writeError(c, errorString, http.StatusBadRequest)
 			return
 		}
 
 		if params.Amount < 1 || params.Amount > 1e6 {
-			writeError(w, "the amount must be between 1 and 1000000", http.StatusBadRequest)
+			writeError(c, "the amount must be between 1 and 1000000", http.StatusBadRequest)
 			return
 		}
 
@@ -123,17 +116,17 @@ func registerWalletsRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
 		if err != nil {
 			switch {
 			case errors.Is(err, wallets.ErrWalletNotFound):
-				writeError(w, err.Error(), http.StatusNotFound)
+				writeError(c, err.Error(), http.StatusNotFound)
 			case errors.Is(err, wallets.ErrWalletNegativeBalance):
-				writeError(w, err.Error(), http.StatusBadRequest)
+				writeError(c, err.Error(), http.StatusBadRequest)
 			default:
 				log.Println(err)
-				writeError(w, internalErrorMessage, http.StatusInternalServerError)
+				writeError(c, internalErrorMessage, http.StatusInternalServerError)
 			}
 
 			return
 		}
 
-		w.WriteHeader(http.StatusNoContent)
+		c.Status(http.StatusNoContent)
 	})
 }
