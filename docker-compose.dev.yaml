@@ -32,25 +32,38 @@ services:
     networks:
       - app-network
 
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: itktt_app
-    ports:
-      - "${APP_PORT}:${APP_PORT}"
-    environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=${DB_NAME}
-      - DB_SSLMODE=disable
+  create-test-db:
+    image: postgres:18-alpine
     depends_on:
       postgres:
         condition: service_healthy
-      migrate:
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+    command:
+      - sh
+      - -c
+      - |
+        psql -h postgres -U ${DB_USER} -d ${DB_NAME} \
+          -tc "SELECT 1 FROM pg_database WHERE datname = '${DB_TEST_NAME}'" \
+          | grep -q 1 \
+          || psql -h postgres -U ${DB_USER} -d ${DB_NAME} \
+          -c "CREATE DATABASE ${DB_TEST_NAME}"
+    networks:
+      - app-network
+
+  migrate-test:
+    image: migrate/migrate
+    volumes:
+      - ./migrations:/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+      create-test-db:
         condition: service_completed_successfully
+    command:
+      - "-path=/migrations"
+      - "-database=postgres://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_TEST_NAME}?sslmode=disable"
+      - "up"
     networks:
       - app-network
 

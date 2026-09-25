@@ -1,0 +1,11 @@
+.git
+.gitignore
+
+config.env
+
+tmp/
+.air.toml
+
+.vscode/
+
+README.md

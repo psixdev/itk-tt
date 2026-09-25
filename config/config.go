@@ -24,8 +24,17 @@ type Config struct {
 }
 
 func Init(path string) (*Config, error) {
-	if err := godotenv.Load(path); err != nil {
+	if err := godotenv.Load(path); err != nil && !os.IsNotExist(err) {
 		return nil, err
+	}
+
+	var dbName string
+
+	switch getEnv("APP_ENV", "") {
+	case "test":
+		dbName = getEnv("DB_TEST_NAME", "dbname_test")
+	default:
+		dbName = getEnv("DB_NAME", "dbname")
 	}
 
 	return &Config{
@@ -37,7 +46,7 @@ func Init(path string) (*Config, error) {
 			Port:     getEnv("DB_PORT", "5432"),
 			User:     getEnv("DB_USER", "test"),
 			Password: getEnv("DB_PASSWORD", "test"),
-			Name:     getEnv("DB_NAME", "dbname"),
+			Name:     dbName,
 		},
 	}, nil
 }
